@@ -86,7 +86,7 @@ pub enum Body<'a> {
     },
 }
 
-impl<'a> Body<'a> {
+impl Body<'_> {
     pub fn path(&self) -> String {
         match self {
             Self::Root => String::from("$"),
@@ -110,6 +110,12 @@ pub struct Element<'a> {
 pub struct Buffer<W, C> {
     inner: W,
     current: C,
+}
+
+impl Default for Buffer<String, Body<'static>> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Buffer<String, Body<'static>> {
