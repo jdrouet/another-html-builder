@@ -1,5 +1,3 @@
-#![feature(box_into_inner)]
-
 use std::fmt::Write;
 
 fn write_escaped_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
@@ -248,7 +246,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
                 inner.write_char('>').unwrap();
                 Buffer {
                     inner,
-                    current: Box::into_inner(parent),
+                    current: *parent,
                 }
             }
             // This should never happen
@@ -279,7 +277,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
                 inner.write_char('>')?;
                 Ok(Buffer {
                     inner,
-                    current: Box::into_inner(parent),
+                    current: *parent,
                 })
             }
             // This should never happen
