@@ -1,6 +1,10 @@
 [package]
-name = "xmlr"
+name = "another-html-builder"
+description = """Yet another html builder, focused on being a helper for creating elements, escaping attributes,
+escaping text, but not caring if the html structure is valid. It's up to the developer to test that."""
 version = "0.1.0"
 edition = "2021"
+authors = ["Jeremie Drouet <jeremie.drouet@gmail.com>"]
+license = "MIT OR apache-2"
 
 [dependencies]
