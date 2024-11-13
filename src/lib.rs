@@ -1,6 +1,16 @@
 use std::fmt::Write;
 
-fn write_escaped_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
+fn write_escaped_attrobute_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
+    for c in value.chars() {
+        match c {
+            '"' => f.write_str("\\\"")?,
+            other => f.write_char(other)?,
+        }
+    }
+    Ok(())
+}
+
+fn write_escaped_content_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
     for c in value.chars() {
         match c {
             '&' => f.write_str("&amp;")?,
@@ -42,7 +52,7 @@ pub trait AttributeValue {
 impl AttributeValue for &str {
     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_char('"')?;
-        write_escaped_str(f, self)?;
+        write_escaped_attrobute_str(f, self)?;
         f.write_char('"')
     }
 }
@@ -183,12 +193,12 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
     }
 
     pub fn text(mut self, content: &str) -> Self {
-        write_escaped_str(&mut self.inner, content).unwrap();
+        write_escaped_content_str(&mut self.inner, content).unwrap();
         self
     }
 
     pub fn try_text(mut self, content: &str) -> Result<Self, std::fmt::Error> {
-        write_escaped_str(&mut self.inner, content)?;
+        write_escaped_content_str(&mut self.inner, content)?;
         Ok(self)
     }
 }
@@ -329,12 +339,25 @@ mod tests {
     }
 
     #[test]
-    fn with_special_characters() {
+    fn with_special_characters_in_attributes() {
         let html = Buffer::new()
             .node("a")
-            .attr(("title", "asd\"weiofew!/<>"))
-            .close()
+            .attr(("title", "Let's add a quote \" like this"))
+            .attr(("href", "http://example.com?whatever=here"))
+            .content(|b| b.text("Click me!"))
             .into_inner();
-        assert_eq!(html, "<a title=\"asd&quot;weiofew!&#x2F;&lt;&gt;\" />");
+        assert_eq!(
+            html,
+            "<a title=\"Let's add a quote \\\" like this\" href=\"http://example.com?whatever=here\">Click me!</a>"
+        );
+    }
+
+    #[test]
+    fn with_special_characters_in_content() {
+        let html = Buffer::new()
+            .node("p")
+            .content(|b| b.text("asd\"weiofew!/<>"))
+            .into_inner();
+        assert_eq!(html, "<p>asd&quot;weiofew!&#x2F;&lt;&gt;</p>");
     }
 }
