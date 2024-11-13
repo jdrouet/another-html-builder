@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/jdrouet/another-html-builder/compare/v0.1.0...v0.1.1) - 2024-11-13
+
+### Fixed
+
+- only escape double quotes in attributes
+
+### Other
+
+- release v0.1.0 ([#1](https://github.com/jdrouet/another-html-builder/pull/1))
+
 ## [0.1.0](https://github.com/jdrouet/another-html-builder/releases/tag/v0.1.0) - 2024-11-11
 
 ### Added
