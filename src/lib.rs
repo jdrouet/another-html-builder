@@ -57,20 +57,56 @@ impl AttributeValue for &str {
     }
 }
 
+fn render_attr_name_only<N: AttributeName>(
+    f: &mut std::fmt::Formatter<'_>,
+    name: &N,
+) -> std::fmt::Result {
+    f.write_char(' ')?;
+    name.render(f)
+}
+
+fn render_attr<N: AttributeName, V: AttributeValue>(
+    f: &mut std::fmt::Formatter<'_>,
+    name: &N,
+    value: &V,
+) -> std::fmt::Result {
+    render_attr_name_only(f, name)?;
+    f.write_char('=')?;
+    value.render(f)
+}
+
 pub struct Attribute<T>(pub T);
+
+impl<N: AttributeName> std::fmt::Display for Attribute<Option<N>> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref inner) = self.0 {
+            render_attr_name_only(f, inner)
+        } else {
+            Ok(())
+        }
+    }
+}
 
 impl<N: AttributeName> std::fmt::Display for Attribute<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.render(f)
+        render_attr_name_only(f, &self.0)
+    }
+}
+
+impl<N: AttributeName, V: AttributeValue> std::fmt::Display for Attribute<Option<(N, V)>> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some((name, value)) = &self.0 {
+            render_attr(f, name, value)
+        } else {
+            Ok(())
+        }
     }
 }
 
 impl<N: AttributeName, V: AttributeValue> std::fmt::Display for Attribute<(N, V)> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (name, value) = &self.0;
-        name.render(f)?;
-        f.write_char('=')?;
-        value.render(f)
+        render_attr(f, name, value)
     }
 }
 
@@ -208,7 +244,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
     where
         Attribute<T>: std::fmt::Display,
     {
-        write!(&mut self.inner, " {}", Attribute(attr)).unwrap();
+        write!(&mut self.inner, "{}", Attribute(attr)).unwrap();
         self
     }
 
@@ -216,7 +252,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
     where
         Attribute<T>: std::fmt::Display,
     {
-        write!(&mut self.inner, " {}", Attribute(attr))?;
+        write!(&mut self.inner, "{}", Attribute(attr))?;
         Ok(self)
     }
 
@@ -359,5 +395,18 @@ mod tests {
             .content(|b| b.text("asd\"weiofew!/<>"))
             .into_inner();
         assert_eq!(html, "<p>asd&quot;weiofew!&#x2F;&lt;&gt;</p>");
+    }
+
+    #[test]
+    fn with_optional_attributes() {
+        let html = Buffer::new()
+            .node("p")
+            .attr(Some(("foo", "bar")))
+            .attr(None::<(&str, &str)>)
+            .attr(Some("here"))
+            .attr(None::<&str>)
+            .close()
+            .into_inner();
+        assert_eq!(html, "<p foo=\"bar\" here />");
     }
 }
