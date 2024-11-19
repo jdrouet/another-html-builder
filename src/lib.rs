@@ -196,6 +196,58 @@ impl<W: std::fmt::Write> Buffer<W, Body<'_>> {
 }
 
 impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
+    pub fn cond<F>(self, condition: bool, children: F) -> Buffer<W, Body<'a>>
+    where
+        F: FnOnce(Buffer<W, Body>) -> Buffer<W, Body>,
+    {
+        if condition {
+            children(self)
+        } else {
+            self
+        }
+    }
+
+    pub fn try_cond<F>(
+        self,
+        condition: bool,
+        children: F,
+    ) -> Result<Buffer<W, Body<'a>>, std::fmt::Error>
+    where
+        F: FnOnce(Buffer<W, Body>) -> Result<Buffer<W, Body>, std::fmt::Error>,
+    {
+        if condition {
+            children(self)
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn optional<V, F>(self, value: Option<V>, children: F) -> Buffer<W, Body<'a>>
+    where
+        F: FnOnce(Buffer<W, Body>, V) -> Buffer<W, Body>,
+    {
+        if let Some(inner) = value {
+            children(self, inner)
+        } else {
+            self
+        }
+    }
+
+    pub fn try_optional<V, F>(
+        self,
+        value: Option<V>,
+        children: F,
+    ) -> Result<Buffer<W, Body<'a>>, std::fmt::Error>
+    where
+        F: FnOnce(Buffer<W, Body>, V) -> Result<Buffer<W, Body>, std::fmt::Error>,
+    {
+        if let Some(inner) = value {
+            children(self, inner)
+        } else {
+            Ok(self)
+        }
+    }
+
     pub fn node(mut self, tag: &'a str) -> Buffer<W, Element<'a>> {
         write!(&mut self.inner, "<{tag}").unwrap();
         Buffer {
@@ -248,12 +300,37 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
         self
     }
 
+    #[inline]
+    pub fn cond_attr<T>(self, condition: bool, attr: T) -> Self
+    where
+        Attribute<T>: std::fmt::Display,
+    {
+        if condition {
+            self.attr(attr)
+        } else {
+            self
+        }
+    }
+
+    #[inline]
     pub fn try_attr<T>(mut self, attr: T) -> Result<Self, std::fmt::Error>
     where
         Attribute<T>: std::fmt::Display,
     {
         write!(&mut self.inner, "{}", Attribute(attr))?;
         Ok(self)
+    }
+
+    #[inline]
+    pub fn try_cond_attr<T>(self, condition: bool, attr: T) -> Result<Self, std::fmt::Error>
+    where
+        Attribute<T>: std::fmt::Display,
+    {
+        if condition {
+            self.try_attr(attr)
+        } else {
+            Ok(self)
+        }
     }
 
     pub fn close(mut self) -> Buffer<W, Body<'a>> {
@@ -408,5 +485,45 @@ mod tests {
             .close()
             .into_inner();
         assert_eq!(html, "<p foo=\"bar\" here />");
+    }
+
+    #[test]
+    fn with_conditional_attributes() {
+        let html = Buffer::new()
+            .node("p")
+            .cond_attr(true, ("foo", "bar"))
+            .cond_attr(false, ("foo", "baz"))
+            .cond_attr(true, "here")
+            .cond_attr(false, "not-here")
+            .close()
+            .into_inner();
+        assert_eq!(html, "<p foo=\"bar\" here />");
+    }
+
+    #[test]
+    fn with_conditional_content() {
+        let notification = false;
+        let connected = true;
+        let html = Buffer::new()
+            .node("div")
+            .content(|buf| {
+                buf.cond(notification, |buf| {
+                    buf.node("p")
+                        .content(|buf| buf.text("You have a notification"))
+                })
+                .cond(connected, |buf| buf.text("Welcome!"))
+            })
+            .into_inner();
+        assert_eq!(html, "<div>Welcome!</div>");
+    }
+
+    #[test]
+    fn with_optional_content() {
+        let error = Some("This is an error");
+        let html = Buffer::new()
+            .node("div")
+            .content(|buf| buf.optional(error, |buf, msg| buf.text(msg)))
+            .into_inner();
+        assert_eq!(html, "<div>This is an error</div>");
     }
 }
