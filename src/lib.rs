@@ -17,8 +17,8 @@
 //! impl AttributeValue for Lang {
 //!     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 //!         f.write_str(match self {
-//!             Self::En => "\"en\"",
-//!             Self::Fr => "\"fr\"",
+//!             Self::En => "en",
+//!             Self::Fr => "fr",
 //!         })
 //!     }
 //! }
@@ -87,7 +87,7 @@ macro_rules! attribute_value {
     ($type:ty) => {
         impl AttributeValue for $type {
             fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "\"{self}\"")
+                write!(f, "{self}")
             }
         }
     };
@@ -114,9 +114,7 @@ pub trait AttributeValue {
 
 impl AttributeValue for &str {
     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_char('"')?;
-        write_escaped_attribute_str(f, self)?;
-        f.write_char('"')
+        write_escaped_attribute_str(f, self)
     }
 }
 
@@ -137,7 +135,9 @@ fn render_attr<N: AttributeName, V: AttributeValue>(
 ) -> std::fmt::Result {
     render_attr_name_only(f, name)?;
     f.write_char('=')?;
-    value.render(f)
+    f.write_char('"')?;
+    value.render(f)?;
+    f.write_char('"')
 }
 
 /// Wrapper used for displaying attributes in elements
@@ -173,7 +173,6 @@ fn render_attr<N: AttributeName, V: AttributeValue>(
 ///
 /// impl<'a> another_html_builder::AttributeValue for ClassNames<'a> {
 ///     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-///         f.write_char('"')?;
 ///         for (index, inner) in self.0.iter().enumerate() {
 ///             if (index > 0) {
 ///                 f.write_char(' ')?;
@@ -181,9 +180,16 @@ fn render_attr<N: AttributeName, V: AttributeValue>(
 ///             // this could be avoided if you consider it is escaped by default
 ///             another_html_builder::write_escaped_attribute_str(f, inner)?;
 ///         }
-///         f.write_char('"')
+///         Ok(())
 ///     }
 /// }
+///
+/// let html = another_html_builder::Buffer::default()
+///     .node("div")
+///     .attr(("class", ClassNames(&["foo", "bar"])))
+///     .close()
+///     .into_inner();
+/// assert_eq!(html, "<div class=\"foo bar\" />");
 /// ```
 pub struct Attribute<T>(pub T);
 
@@ -220,6 +226,7 @@ impl<N: AttributeName, V: AttributeValue> std::fmt::Display for Attribute<(N, V)
     }
 }
 
+attribute_value!(bool);
 attribute_value!(u8);
 attribute_value!(u16);
 attribute_value!(u32);
