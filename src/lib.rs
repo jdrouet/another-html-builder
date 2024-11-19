@@ -57,29 +57,46 @@
 use std::fmt::Write;
 
 /// Helper to write `&str` attributes to a [Write] and automatically escape
-pub fn write_escaped_attribute_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
-    for c in value.chars() {
-        match c {
-            '"' => f.write_str("\\\"")?,
-            other => f.write_char(other)?,
-        }
+pub fn escape_attr<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
+    if value.is_empty() {
+        return Ok(());
     }
+    let mut start: usize = 0;
+    while let Some(index) = value[start..].find('"') {
+        if index > 0 {
+            f.write_str(&value[start..(start + index)])?;
+        }
+        f.write_str("\\\"")?;
+        start += index + 1;
+    }
+    f.write_str(&value[start..])?;
     Ok(())
 }
 
+const CONTENT_ESCAPE: [char; 6] = ['&', '<', '>', '"', '\'', '/'];
+
 /// Helper to write `&str` content to a [Write] and automatically escape
-pub fn write_escaped_content_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
-    for c in value.chars() {
-        match c {
-            '&' => f.write_str("&amp;")?,
-            '<' => f.write_str("&lt;")?,
-            '>' => f.write_str("&gt;")?,
-            '"' => f.write_str("&quot;")?,
-            '\'' => f.write_str("&#x27;")?,
-            '/' => f.write_str("&#x2F;")?,
-            other => f.write_char(other)?,
-        }
+pub fn escape_content<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
+    if value.is_empty() {
+        return Ok(());
     }
+    let mut start: usize = 0;
+    while let Some(index) = value[start..].find(CONTENT_ESCAPE) {
+        if index > 0 {
+            f.write_str(&value[start..(start + index)])?;
+        }
+        match &value[(start + index)..(start + index + 1)] {
+            "&" => f.write_str("&amp;")?,
+            "<" => f.write_str("&lt;")?,
+            ">" => f.write_str("&gt;")?,
+            "\"" => f.write_str("&quot;")?,
+            "'" => f.write_str("&#x27;")?,
+            "/" => f.write_str("&#x2F;")?,
+            other => f.write_str(other)?,
+        };
+        start += index + 1;
+    }
+    f.write_str(&value[start..])?;
     Ok(())
 }
 
@@ -114,7 +131,7 @@ pub trait AttributeValue {
 
 impl AttributeValue for &str {
     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write_escaped_attribute_str(f, self)
+        escape_attr(f, self)
     }
 }
 
@@ -178,7 +195,7 @@ fn render_attr<N: AttributeName, V: AttributeValue>(
 ///                 f.write_char(' ')?;
 ///             }
 ///             // this could be avoided if you consider it is escaped by default
-///             another_html_builder::write_escaped_attribute_str(f, inner)?;
+///             another_html_builder::escape_attr(f, inner)?;
 ///         }
 ///         Ok(())
 ///     }
@@ -467,12 +484,12 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
     /// assert_eq!(html, "<p>asd&quot;weiofew!&#x2F;&lt;&gt;</p>");
     /// ```
     pub fn text(mut self, content: &str) -> Self {
-        write_escaped_content_str(&mut self.inner, content).unwrap();
+        escape_content(&mut self.inner, content).unwrap();
         self
     }
 
     pub fn try_text(mut self, content: &str) -> Result<Self, std::fmt::Error> {
-        write_escaped_content_str(&mut self.inner, content)?;
+        escape_content(&mut self.inner, content)?;
         Ok(self)
     }
 }
@@ -655,6 +672,26 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test_case::test_case("hello world", "hello world"; "without character to escape")]
+    #[test_case::test_case("a\"b", "a\\\"b"; "with special in the middle")]
+    #[test_case::test_case("\"a", "\\\"a"; "with special at the beginning")]
+    #[test_case::test_case("a\"", "a\\\""; "with special at the end")]
+    fn escaping_attribute(input: &str, expected: &str) {
+        let mut buf = String::new();
+        super::escape_attr(&mut buf, input).unwrap();
+        assert_eq!(buf, expected);
+    }
+
+    #[test_case::test_case("hello world", "hello world"; "without character to escape")]
+    #[test_case::test_case("a\"b", "a&quot;b"; "with special in the middle")]
+    #[test_case::test_case("\"a", "&quot;a"; "with special at the beginning")]
+    #[test_case::test_case("a\"", "a&quot;"; "with special at the end")]
+    fn escaping_content(input: &str, expected: &str) {
+        let mut buf = String::new();
+        super::escape_content(&mut buf, input).unwrap();
+        assert_eq!(buf, expected);
+    }
 
     #[test]
     fn should_rollback_after_content() {

@@ -11,3 +11,6 @@ edition = "2021"
 readme = "readme.md"
 
 [dependencies]
+
+[dev-dependencies]
+test-case = { version = "3" }
