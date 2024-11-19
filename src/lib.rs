@@ -728,6 +728,19 @@ mod tests {
     }
 
     #[test]
+    fn with_attributes() {
+        let html = Buffer::new()
+            .node("p")
+            .attr(("foo", "bar"))
+            .attr(("bool", true))
+            .attr(("u8", 42u8))
+            .attr(("i8", -1i8))
+            .close()
+            .into_inner();
+        assert_eq!(html, "<p foo=\"bar\" bool=\"true\" u8=\"42\" i8=\"-1\" />");
+    }
+
+    #[test]
     fn with_conditional_attributes() {
         let html = Buffer::new()
             .node("p")
