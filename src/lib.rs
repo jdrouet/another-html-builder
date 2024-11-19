@@ -1,6 +1,63 @@
+//! Just a simple toolkit for writing html.
+//!
+//! This provides the basic functions needed to write basic html or create components to build a rich and complete UI.
+//!
+//! # Example
+//!
+//! In this example, we create a custom attribute and also a custom `Head` element.
+//!
+//! ```rust
+//! use another_html_builder::{AttributeValue, Body, Buffer};
+//!
+//! enum Lang {
+//!     En,
+//!     Fr,
+//! }
+//!
+//! impl AttributeValue for Lang {
+//!     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//!         f.write_str(match self {
+//!             Self::En => "\"en\"",
+//!             Self::Fr => "\"fr\"",
+//!         })
+//!     }
+//! }
+//!
+//! struct Head {
+//!     title: &'static str,
+//! }
+//!
+//! impl Default for Head {
+//!     fn default() -> Self {
+//!         Self {
+//!             title: "Hello world!",
+//!         }
+//!     }
+//! }
+//!
+//! impl Head {
+//!     fn render<'a, W: std::fmt::Write>(&self, buf: Buffer<W, Body<'a>>) -> Buffer<W, Body<'a>> {
+//!         buf.node("head")
+//!             .content(|buf| buf.node("title").content(|buf| buf.text(self.title)))
+//!     }
+//! }
+//!
+//! let head = Head::default();
+//! let html = Buffer::default()
+//!     .doctype()
+//!     .node("html")
+//!     .attr(("lang", Lang::Fr))
+//!     .content(|buf| head.render(buf))
+//!     .into_inner();
+//! assert_eq!(
+//!     html,
+//!     "<!DOCTYPE html><html lang=\"fr\"><head><title>Hello world!</title></head></html>"
+//! );
+//! ```
 use std::fmt::Write;
 
-fn write_escaped_attrobute_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
+/// Helper to write `&str` attributes to a [Write] and automatically escape
+pub fn write_escaped_attribute_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
     for c in value.chars() {
         match c {
             '"' => f.write_str("\\\"")?,
@@ -10,7 +67,8 @@ fn write_escaped_attrobute_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Re
     Ok(())
 }
 
-fn write_escaped_content_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
+/// Helper to write `&str` content to a [Write] and automatically escape
+pub fn write_escaped_content_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
     for c in value.chars() {
         match c {
             '&' => f.write_str("&amp;")?,
@@ -35,6 +93,7 @@ macro_rules! attribute_value {
     };
 }
 
+/// Represents an element attribute name.
 pub trait AttributeName {
     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
 }
@@ -45,6 +104,10 @@ impl AttributeName for &str {
     }
 }
 
+/// Represents an element attribute value.
+///
+/// This value should be escaped for double quotes for example.
+/// The implementation of this trait on `&str` already implements this.
 pub trait AttributeValue {
     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
 }
@@ -52,11 +115,12 @@ pub trait AttributeValue {
 impl AttributeValue for &str {
     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_char('"')?;
-        write_escaped_attrobute_str(f, self)?;
+        write_escaped_attribute_str(f, self)?;
         f.write_char('"')
     }
 }
 
+#[inline]
 fn render_attr_name_only<N: AttributeName>(
     f: &mut std::fmt::Formatter<'_>,
     name: &N,
@@ -65,6 +129,7 @@ fn render_attr_name_only<N: AttributeName>(
     name.render(f)
 }
 
+#[inline]
 fn render_attr<N: AttributeName, V: AttributeValue>(
     f: &mut std::fmt::Formatter<'_>,
     name: &N,
@@ -75,6 +140,51 @@ fn render_attr<N: AttributeName, V: AttributeValue>(
     value.render(f)
 }
 
+/// Wrapper used for displaying attributes in elements
+///
+/// This wrapper can print attributes with or without values.
+/// It can also handle attributes wrapped in an `Option` and will behave accordingly.
+///
+/// # Examples
+///
+/// ```rust
+/// let html = another_html_builder::Buffer::default()
+///     .node("div")
+///     .attr("name-only")
+///     .attr(("name", "value"))
+///     .attr(Some(("other", "value")))
+///     .attr(("with-number", 42))
+///     .close()
+///     .into_inner();
+/// assert_eq!(
+///     html,
+///     "<div name-only name=\"value\" other=\"value\" with-number=\"42\" />"
+/// );
+/// ```
+///
+/// # Extending
+///
+/// It's possible to implement attributes with custom types, just by implementing the [AttributeName] and [AttributeValue] traits.
+///
+/// ```rust
+/// use std::fmt::Write;
+///
+/// struct ClassNames<'a>(&'a [&'static str]);
+///
+/// impl<'a> another_html_builder::AttributeValue for ClassNames<'a> {
+///     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+///         f.write_char('"')?;
+///         for (index, inner) in self.0.iter().enumerate() {
+///             if (index > 0) {
+///                 f.write_char(' ')?;
+///             }
+///             // this could be avoided if you consider it is escaped by default
+///             another_html_builder::write_escaped_attribute_str(f, inner)?;
+///         }
+///         f.write_char('"')
+///     }
+/// }
+/// ```
 pub struct Attribute<T>(pub T);
 
 impl<N: AttributeName> std::fmt::Display for Attribute<Option<N>> {
@@ -121,9 +231,15 @@ attribute_value!(i32);
 attribute_value!(i64);
 attribute_value!(isize);
 
+/// Representation of the inside of an element or the root level.
+///
+/// This component is made for the [Buffer] to be aware of where it is
+/// and provide adequat functions.
 #[derive(Debug)]
 pub enum Body<'a> {
+    /// This represents the root of the DOM. It has not name nor parents.
     Root,
+    /// This represents any element with a name.
     Element {
         name: &'a str,
         parent: Box<Body<'a>>,
@@ -131,6 +247,9 @@ pub enum Body<'a> {
 }
 
 impl Body<'_> {
+    /// Generates the path of the current element.
+    ///
+    /// Note: this will not provid a valide CSS path
     pub fn path(&self) -> String {
         match self {
             Self::Root => String::from("$"),
@@ -144,12 +263,14 @@ impl Body<'_> {
     }
 }
 
+/// Representation of an element
 #[derive(Debug)]
 pub struct Element<'a> {
     parent: Body<'a>,
     name: &'a str,
 }
 
+/// Wrapper arround a writer element.
 #[derive(Clone, Debug)]
 pub struct Buffer<W, C> {
     inner: W,
@@ -184,11 +305,13 @@ impl Buffer<String, Body<'_>> {
 }
 
 impl<W: std::fmt::Write> Buffer<W, Body<'_>> {
+    /// Appends the html doctype to the buffer
     pub fn doctype(mut self) -> Self {
         self.inner.write_str("<!DOCTYPE html>").unwrap();
         self
     }
 
+    /// Tries to append the html doctype to the buffer
     pub fn try_doctype(mut self) -> Result<Self, std::fmt::Error> {
         self.inner.write_str("<!DOCTYPE html>")?;
         Ok(self)
@@ -196,6 +319,17 @@ impl<W: std::fmt::Write> Buffer<W, Body<'_>> {
 }
 
 impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
+    /// Conditionally apply some children to an element
+    ///
+    /// ```rust
+    /// let is_error = true;
+    /// let html = another_html_builder::Buffer::default()
+    ///     .cond(is_error, |buf| {
+    ///         buf.node("p").content(|buf| buf.text("ERROR!"))
+    ///     })
+    ///     .into_inner();
+    /// assert_eq!(html, "<p>ERROR!</p>");
+    /// ```
     pub fn cond<F>(self, condition: bool, children: F) -> Buffer<W, Body<'a>>
     where
         F: FnOnce(Buffer<W, Body>) -> Buffer<W, Body>,
@@ -222,6 +356,18 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
         }
     }
 
+    /// Conditionally apply some children to an element depending on an optional
+    ///
+    /// ```rust
+    /// let value: Option<u8> = Some(42);
+    /// let html = another_html_builder::Buffer::default()
+    ///     .optional(value, |buf, answer| {
+    ///         buf.node("p")
+    ///             .content(|buf| buf.text("Answer: ").raw(answer))
+    ///     })
+    ///     .into_inner();
+    /// assert_eq!(html, "<p>Answer: 42</p>");
+    /// ```
     pub fn optional<V, F>(self, value: Option<V>, children: F) -> Buffer<W, Body<'a>>
     where
         F: FnOnce(Buffer<W, Body>, V) -> Buffer<W, Body>,
@@ -248,6 +394,27 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
         }
     }
 
+    /// Starts a new node in the buffer
+    ///
+    /// After calling this function, the buffer will only allow to add attributes,
+    /// close the current node or add content to the node.
+    ///
+    /// ```rust
+    /// let html = another_html_builder::Buffer::default()
+    ///     .node("p")
+    ///     .attr(("foo", "bar"))
+    ///     .close()
+    ///     .into_inner();
+    /// assert_eq!(html, "<p foo=\"bar\" />");
+    /// ```
+    ///
+    /// ```rust
+    /// let html = another_html_builder::Buffer::default()
+    ///     .node("p")
+    ///     .content(|buf| buf.text("hello"))
+    ///     .into_inner();
+    /// assert_eq!(html, "<p>hello</p>");
+    /// ```
     pub fn node(mut self, tag: &'a str) -> Buffer<W, Element<'a>> {
         write!(&mut self.inner, "<{tag}").unwrap();
         Buffer {
@@ -270,6 +437,9 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
         })
     }
 
+    /// Appends some raw content implementing [Display](std::fmt::Display)
+    ///
+    /// This will not escape the provided value.
     pub fn raw<V: std::fmt::Display>(mut self, value: V) -> Self {
         write!(&mut self.inner, "{value}").unwrap();
         self
@@ -280,6 +450,15 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
         Ok(self)
     }
 
+    /// Appends some text and escape it.
+    ///
+    /// ```rust
+    /// let html = another_html_builder::Buffer::new()
+    ///     .node("p")
+    ///     .content(|b| b.text("asd\"weiofew!/<>"))
+    ///     .into_inner();
+    /// assert_eq!(html, "<p>asd&quot;weiofew!&#x2F;&lt;&gt;</p>");
+    /// ```
     pub fn text(mut self, content: &str) -> Self {
         write_escaped_content_str(&mut self.inner, content).unwrap();
         self
@@ -292,6 +471,27 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
 }
 
 impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
+    /// Appends an attribute to the current node.
+    ///
+    /// For more information about how to extend attributes, take a look at the [Attribute] trait.
+    ///
+    /// ```rust
+    /// let html = another_html_builder::Buffer::new()
+    ///     .node("p")
+    ///     .attr("single")
+    ///     .attr(("hello", "world"))
+    ///     .attr(("number", 42))
+    ///     .attr(Some(("foo", "bar")))
+    ///     .attr(None::<(&str, &str)>)
+    ///     .attr(Some("here"))
+    ///     .attr(None::<&str>)
+    ///     .close()
+    ///     .into_inner();
+    /// assert_eq!(
+    ///     html,
+    ///     "<p single hello=\"world\" number=\"42\" foo=\"bar\" here />"
+    /// );
+    /// ```
     pub fn attr<T>(mut self, attr: T) -> Self
     where
         Attribute<T>: std::fmt::Display,
@@ -300,6 +500,28 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
         self
     }
 
+    #[inline]
+    pub fn try_attr<T>(mut self, attr: T) -> Result<Self, std::fmt::Error>
+    where
+        Attribute<T>: std::fmt::Display,
+    {
+        write!(&mut self.inner, "{}", Attribute(attr))?;
+        Ok(self)
+    }
+
+    /// Conditionally appends some attributes
+    ///
+    /// ```rust
+    /// let html = another_html_builder::Buffer::new()
+    ///     .node("p")
+    ///     .cond_attr(true, ("foo", "bar"))
+    ///     .cond_attr(false, ("foo", "baz"))
+    ///     .cond_attr(true, "here")
+    ///     .cond_attr(false, "not-here")
+    ///     .close()
+    ///     .into_inner();
+    /// assert_eq!(html, "<p foo=\"bar\" here />");
+    /// ```
     #[inline]
     pub fn cond_attr<T>(self, condition: bool, attr: T) -> Self
     where
@@ -310,15 +532,6 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
         } else {
             self
         }
-    }
-
-    #[inline]
-    pub fn try_attr<T>(mut self, attr: T) -> Result<Self, std::fmt::Error>
-    where
-        Attribute<T>: std::fmt::Display,
-    {
-        write!(&mut self.inner, "{}", Attribute(attr))?;
-        Ok(self)
     }
 
     #[inline]
@@ -333,6 +546,15 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
         }
     }
 
+    /// Closes the current node without providing any content
+    ///
+    /// ```rust
+    /// let html = another_html_builder::Buffer::new()
+    ///     .node("p")
+    ///     .close()
+    ///     .into_inner();
+    /// assert_eq!(html, "<p />");
+    /// ```
     pub fn close(mut self) -> Buffer<W, Body<'a>> {
         self.inner.write_str(" />").unwrap();
         Buffer {
@@ -349,6 +571,17 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
         })
     }
 
+    /// Closes the current node and start writing it's content
+    ///
+    /// When returning the inner callback, the closing element will be written to the buffer
+    ///
+    /// ```rust
+    /// let html = another_html_builder::Buffer::new()
+    ///     .node("div")
+    ///     .content(|buf| buf.node("p").close())
+    ///     .into_inner();
+    /// assert_eq!(html, "<div><p /></div>");
+    /// ```
     pub fn content<F>(mut self, children: F) -> Buffer<W, Body<'a>>
     where
         F: FnOnce(Buffer<W, Body>) -> Buffer<W, Body>,
