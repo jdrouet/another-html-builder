@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/jdrouet/another-html-builder/compare/v0.1.2...v0.1.3) - 2024-11-30
+
+### Fixed
+
+- add back removed function with deprecation notice
+- ensure mutants are handled
+
+### Other
+
+- make sure we don't introduce mutating bugs
+- optimize escaping functions
+
 ## [0.1.2](https://github.com/jdrouet/another-html-builder/compare/v0.1.1...v0.1.2) - 2024-11-19
 
 ### Added
