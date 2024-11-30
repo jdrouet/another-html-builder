@@ -67,7 +67,9 @@ pub fn escape_attr<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
             f.write_str(&value[start..(start + index)])?;
         }
         f.write_str("\\\"")?;
-        start += index + 1;
+        let end = start + index + 1;
+        debug_assert!(start < end && end <= value.len());
+        start = end;
     }
     f.write_str(&value[start..])?;
     Ok(())
@@ -85,7 +87,13 @@ pub fn escape_content<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
         if index > 0 {
             f.write_str(&value[start..(start + index)])?;
         }
-        match &value[(start + index)..(start + index + 1)] {
+        let begin = start + index;
+        debug_assert!(start <= begin);
+        let end = begin + 1;
+        debug_assert!(begin < value.len());
+        debug_assert!(begin < end);
+        debug_assert!(end <= value.len());
+        match &value[begin..end] {
             "&" => f.write_str("&amp;")?,
             "<" => f.write_str("&lt;")?,
             ">" => f.write_str("&gt;")?,
@@ -94,7 +102,8 @@ pub fn escape_content<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
             "/" => f.write_str("&#x2F;")?,
             other => f.write_str(other)?,
         };
-        start += index + 1;
+        start = end;
+        debug_assert!(start <= value.len());
     }
     f.write_str(&value[start..])?;
     Ok(())
@@ -691,6 +700,22 @@ mod tests {
         let mut buf = String::new();
         super::escape_content(&mut buf, input).unwrap();
         assert_eq!(buf, expected);
+    }
+
+    #[test]
+    fn should_return_inner_value() {
+        let buf = Buffer::new().node("a").content(|buf| buf);
+        assert_eq!(buf.inner(), "<a></a>");
+    }
+
+    #[test]
+    fn should_give_node_path() {
+        let buf = Buffer::new();
+        assert_eq!(buf.current.path(), "$");
+        let _buf = buf.node("a").content(|buf| {
+            assert_eq!(buf.current.path(), "$ > a");
+            buf
+        });
     }
 
     #[test]
