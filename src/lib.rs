@@ -75,6 +75,13 @@ pub fn escape_attr<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
     Ok(())
 }
 
+/// Helper to write `&str` attributes to a [Write] and automatically escape
+#[deprecated(note = "this function has been renamed, use `escape_attr` instead")]
+#[inline(always)]
+pub fn write_escaped_attribute_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
+    escape_attr(f, value)
+}
+
 const CONTENT_ESCAPE: [char; 6] = ['&', '<', '>', '"', '\'', '/'];
 
 /// Helper to write `&str` content to a [Write] and automatically escape
@@ -107,6 +114,13 @@ pub fn escape_content<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
     }
     f.write_str(&value[start..])?;
     Ok(())
+}
+
+/// Helper to write `&str` content to a [Write] and automatically escape
+#[deprecated(note = "this function has been renamed, use `escape_content` instead")]
+#[inline(always)]
+pub fn write_escaped_content_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
+    escape_content(f, value)
 }
 
 macro_rules! attribute_value {
@@ -690,6 +704,11 @@ mod tests {
         let mut buf = String::new();
         super::escape_attr(&mut buf, input).unwrap();
         assert_eq!(buf, expected);
+
+        let mut buf = String::new();
+        #[allow(deprecated, reason = "for testing purpose")]
+        super::write_escaped_attribute_str(&mut buf, input).unwrap();
+        assert_eq!(buf, expected);
     }
 
     #[test_case::test_case("hello world", "hello world"; "without character to escape")]
@@ -699,6 +718,11 @@ mod tests {
     fn escaping_content(input: &str, expected: &str) {
         let mut buf = String::new();
         super::escape_content(&mut buf, input).unwrap();
+        assert_eq!(buf, expected);
+
+        let mut buf = String::new();
+        #[allow(deprecated, reason = "for testing purpose")]
+        super::write_escaped_content_str(&mut buf, input).unwrap();
         assert_eq!(buf, expected);
     }
 
