@@ -4,10 +4,16 @@ on:
   merge_group:
     types: [checks_requested]
   workflow_call:
-  pull_request:
   push:
     branches:
       - main
+  pull_request:
+    # Only test PR if it changes something that's likely to affect the results, because
+    # mutant tests can take a long time.
+    paths:
+      - ".github/workflows/mutants.yml"
+      - "Cargo.*"
+      - "src/**"
 
 env:
   RUSTFLAGS: "-Dwarnings"
@@ -47,3 +53,17 @@ jobs:
         with:
           files: lcov.info
           fail_ci_if_error: false
+
+  cargo-mutants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+      - run: cargo mutants -vV --in-place
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutants-out
+          path: mutants.out
