@@ -8,6 +8,7 @@
 //!
 //! ```rust
 //! use another_html_builder::attribute::AttributeValue;
+//! use another_html_builder::prelude::WriterExt;
 //! use another_html_builder::{Body, Buffer};
 //!
 //! enum Lang {
@@ -16,7 +17,7 @@
 //! }
 //!
 //! impl AttributeValue for Lang {
-//!     fn render<W: std::fmt::Write>(&self, f: &mut W) -> std::fmt::Result {
+//!     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 //!         f.write_str(match self {
 //!             Self::En => "en",
 //!             Self::Fr => "fr",
@@ -37,7 +38,7 @@
 //! }
 //!
 //! impl Head {
-//!     fn render<'a, W: std::fmt::Write>(&self, buf: Buffer<W, Body<'a>>) -> Buffer<W, Body<'a>> {
+//!     fn render<'a, W: WriterExt>(&self, buf: Buffer<W, Body<'a>>) -> Buffer<W, Body<'a>> {
 //!         buf.node("head")
 //!             .content(|buf| buf.node("title").content(|buf| buf.text(self.title)))
 //!     }
@@ -58,53 +59,23 @@
 use std::fmt::Write;
 
 pub mod attribute;
+pub mod content;
+pub mod prelude;
+
+use crate::prelude::{FmtWriter, IoWriter, WriterExt};
 
 /// Helper to write `&str` attributes to a [Write] and automatically escape
 #[deprecated(note = "this function has been renamed, use `attribute::escape` instead")]
 #[inline(always)]
 pub fn write_escaped_attribute_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
-    attribute::escape(f, value)
-}
-
-const CONTENT_ESCAPE: [char; 6] = ['&', '<', '>', '"', '\'', '/'];
-
-/// Helper to write `&str` content to a [Write] and automatically escape
-pub fn escape_content<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
-    if value.is_empty() {
-        return Ok(());
-    }
-    let mut start: usize = 0;
-    while let Some(index) = value[start..].find(CONTENT_ESCAPE) {
-        if index > 0 {
-            f.write_str(&value[start..(start + index)])?;
-        }
-        let begin = start + index;
-        debug_assert!(start <= begin);
-        let end = begin + 1;
-        debug_assert!(begin < value.len());
-        debug_assert!(begin < end);
-        debug_assert!(end <= value.len());
-        match &value[begin..end] {
-            "&" => f.write_str("&amp;")?,
-            "<" => f.write_str("&lt;")?,
-            ">" => f.write_str("&gt;")?,
-            "\"" => f.write_str("&quot;")?,
-            "'" => f.write_str("&#x27;")?,
-            "/" => f.write_str("&#x2F;")?,
-            other => f.write_str(other)?,
-        };
-        start = end;
-        debug_assert!(start <= value.len());
-    }
-    f.write_str(&value[start..])?;
-    Ok(())
+    write!(f, "{}", attribute::EscapedValue(value))
 }
 
 /// Helper to write `&str` content to a [Write] and automatically escape
 #[deprecated(note = "this function has been renamed, use `escape_content` instead")]
 #[inline(always)]
 pub fn write_escaped_content_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
-    escape_content(f, value)
+    write!(f, "{}", content::EscapedContent(value))
 }
 
 /// Representation of the inside of an element or the root level.
@@ -153,34 +124,40 @@ pub struct Buffer<W, C> {
     current: C,
 }
 
-impl Default for Buffer<String, Body<'static>> {
+impl Default for Buffer<FmtWriter<String>, Body<'static>> {
     fn default() -> Self {
         Self::new(String::new())
     }
 }
 
-impl Buffer<String, Body<'static>> {
-    pub fn new(buffer: String) -> Self {
+impl<W: std::fmt::Write> Buffer<FmtWriter<W>, Body<'static>> {
+    pub fn new(buffer: W) -> Self {
         Self {
-            inner: buffer,
+            inner: FmtWriter(buffer),
             current: Body::Root,
         }
     }
 }
 
-impl<W> Buffer<W, Body<'_>> {
+impl<W> Buffer<FmtWriter<W>, Body<'_>> {
     pub fn into_inner(self) -> W {
-        self.inner
+        self.inner.0
     }
 }
 
-impl Buffer<String, Body<'_>> {
+impl<W> Buffer<IoWriter<W>, Body<'_>> {
+    pub fn into_inner(self) -> W {
+        self.inner.0
+    }
+}
+
+impl Buffer<FmtWriter<String>, Body<'_>> {
     pub fn inner(&self) -> &str {
-        self.inner.as_str()
+        self.inner.0.as_str()
     }
 }
 
-impl<W: std::fmt::Write> Buffer<W, Body<'_>> {
+impl<W: WriterExt> Buffer<W, Body<'_>> {
     /// Appends the html doctype to the buffer
     pub fn doctype(mut self) -> Self {
         self.inner.write_str("<!DOCTYPE html>").unwrap();
@@ -188,13 +165,13 @@ impl<W: std::fmt::Write> Buffer<W, Body<'_>> {
     }
 
     /// Tries to append the html doctype to the buffer
-    pub fn try_doctype(mut self) -> Result<Self, std::fmt::Error> {
+    pub fn try_doctype(mut self) -> Result<Self, std::io::Error> {
         self.inner.write_str("<!DOCTYPE html>")?;
         Ok(self)
     }
 }
 
-impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
+impl<'a, W: WriterExt> Buffer<W, Body<'a>> {
     /// Conditionally apply some children to an element
     ///
     /// ```rust
@@ -292,7 +269,8 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
     /// assert_eq!(html, "<p>hello</p>");
     /// ```
     pub fn node(mut self, tag: &'a str) -> Buffer<W, Element<'a>> {
-        write!(&mut self.inner, "<{tag}").unwrap();
+        self.inner.write_char('<').unwrap();
+        self.inner.write_str(tag).unwrap();
         Buffer {
             inner: self.inner,
             current: Element {
@@ -302,8 +280,9 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
         }
     }
 
-    pub fn try_node(mut self, tag: &'a str) -> Result<Buffer<W, Element<'a>>, std::fmt::Error> {
-        write!(&mut self.inner, "<{tag}")?;
+    pub fn try_node(mut self, tag: &'a str) -> Result<Buffer<W, Element<'a>>, std::io::Error> {
+        self.inner.write_char('<')?;
+        self.inner.write_str(tag)?;
         Ok(Buffer {
             inner: self.inner,
             current: Element {
@@ -317,12 +296,12 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
     ///
     /// This will not escape the provided value.
     pub fn raw<V: std::fmt::Display>(mut self, value: V) -> Self {
-        write!(&mut self.inner, "{value}").unwrap();
+        self.inner.write(value).unwrap();
         self
     }
 
-    pub fn try_raw<V: std::fmt::Display>(mut self, value: V) -> Result<Self, std::fmt::Error> {
-        write!(&mut self.inner, "{value}")?;
+    pub fn try_raw<V: std::fmt::Display>(mut self, value: V) -> Result<Self, std::io::Error> {
+        self.inner.write(value)?;
         Ok(self)
     }
 
@@ -335,18 +314,18 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
     ///     .into_inner();
     /// assert_eq!(html, "<p>asd&quot;weiofew!&#x2F;&lt;&gt;</p>");
     /// ```
-    pub fn text(mut self, content: &str) -> Self {
-        escape_content(&mut self.inner, content).unwrap();
+    pub fn text(mut self, input: &str) -> Self {
+        self.inner.write(content::EscapedContent(input)).unwrap();
         self
     }
 
-    pub fn try_text(mut self, content: &str) -> Result<Self, std::fmt::Error> {
-        escape_content(&mut self.inner, content)?;
+    pub fn try_text(mut self, input: &str) -> Result<Self, std::io::Error> {
+        self.inner.write(content::EscapedContent(input))?;
         Ok(self)
     }
 }
 
-impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
+impl<'a, W: WriterExt> Buffer<W, Element<'a>> {
     /// Appends an attribute to the current node.
     ///
     /// For more information about how to extend attributes, take a look at the [Attribute] trait.
@@ -372,16 +351,16 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
     where
         attribute::Attribute<T>: std::fmt::Display,
     {
-        write!(&mut self.inner, "{}", attribute::Attribute(attr)).unwrap();
+        self.inner.write(attribute::Attribute(attr)).unwrap();
         self
     }
 
     #[inline]
-    pub fn try_attr<T>(mut self, attr: T) -> Result<Self, std::fmt::Error>
+    pub fn try_attr<T>(mut self, attr: T) -> Result<Self, std::io::Error>
     where
         attribute::Attribute<T>: std::fmt::Display,
     {
-        write!(&mut self.inner, "{}", attribute::Attribute(attr))?;
+        self.inner.write(attribute::Attribute(attr))?;
         Ok(self)
     }
 
@@ -411,7 +390,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
     }
 
     #[inline]
-    pub fn try_cond_attr<T>(self, condition: bool, attr: T) -> Result<Self, std::fmt::Error>
+    pub fn try_cond_attr<T>(self, condition: bool, attr: T) -> Result<Self, std::io::Error>
     where
         attribute::Attribute<T>: std::fmt::Display,
     {
@@ -439,7 +418,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
         }
     }
 
-    pub fn try_close(mut self) -> Result<Buffer<W, Body<'a>>, std::fmt::Error> {
+    pub fn try_close(mut self) -> Result<Buffer<W, Body<'a>>, std::io::Error> {
         self.inner.write_str(" />")?;
         Ok(Buffer {
             inner: self.inner,
@@ -489,9 +468,9 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
         }
     }
 
-    pub fn try_content<F>(mut self, children: F) -> Result<Buffer<W, Body<'a>>, std::fmt::Error>
+    pub fn try_content<F>(mut self, children: F) -> Result<Buffer<W, Body<'a>>, std::io::Error>
     where
-        F: FnOnce(Buffer<W, Body>) -> Result<Buffer<W, Body>, std::fmt::Error>,
+        F: FnOnce(Buffer<W, Body>) -> Result<Buffer<W, Body>, std::io::Error>,
     {
         self.inner.write_char('>')?;
         let child_buffer = Buffer {
@@ -530,9 +509,10 @@ mod tests {
     #[test_case::test_case("\"a", "\\\"a"; "with special at the beginning")]
     #[test_case::test_case("a\"", "a\\\""; "with special at the end")]
     fn escaping_attribute(input: &str, expected: &str) {
-        let mut buf = String::new();
-        crate::attribute::escape(&mut buf, input).unwrap();
-        assert_eq!(buf, expected);
+        assert_eq!(
+            format!("{}", crate::attribute::EscapedValue(input)),
+            expected
+        );
 
         let mut buf = String::new();
         #[allow(deprecated, reason = "for testing purpose")]
@@ -545,9 +525,10 @@ mod tests {
     #[test_case::test_case("\"a", "&quot;a"; "with special at the beginning")]
     #[test_case::test_case("a\"", "a&quot;"; "with special at the end")]
     fn escaping_content(input: &str, expected: &str) {
-        let mut buf = String::new();
-        super::escape_content(&mut buf, input).unwrap();
-        assert_eq!(buf, expected);
+        assert_eq!(
+            format!("{}", crate::content::EscapedContent(input)),
+            expected
+        );
 
         let mut buf = String::new();
         #[allow(deprecated, reason = "for testing purpose")]

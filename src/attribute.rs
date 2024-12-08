@@ -1,28 +1,31 @@
-use std::fmt::Write;
+use std::fmt::{Display, Write};
 
-/// Helper to write `&str` attributes to a [Write] and automatically escape
-pub fn escape<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
-    if value.is_empty() {
-        return Ok(());
-    }
-    let mut start: usize = 0;
-    while let Some(index) = value[start..].find('"') {
-        if index > 0 {
-            f.write_str(&value[start..(start + index)])?;
+pub struct EscapedValue<'a>(pub &'a str);
+
+impl std::fmt::Display for EscapedValue<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0.is_empty() {
+            return Ok(());
         }
-        f.write_str("\\\"")?;
-        let end = start + index + 1;
-        debug_assert!(start < end && end <= value.len());
-        start = end;
+        let mut start: usize = 0;
+        while let Some(index) = self.0[start..].find('"') {
+            if index > 0 {
+                f.write_str(&self.0[start..(start + index)])?;
+            }
+            f.write_str("\\\"")?;
+            let end = start + index + 1;
+            debug_assert!(start < end && end <= self.0.len());
+            start = end;
+        }
+        f.write_str(&self.0[start..])?;
+        Ok(())
     }
-    f.write_str(&value[start..])?;
-    Ok(())
 }
 
 macro_rules! attribute_value {
     ($type:ty) => {
         impl AttributeValue for $type {
-            fn render<W: std::fmt::Write>(&self, f: &mut W) -> std::fmt::Result {
+            fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 write!(f, "{self}")
             }
         }
@@ -31,12 +34,12 @@ macro_rules! attribute_value {
 
 /// Represents an element attribute name.
 pub trait AttributeName {
-    fn render<W: Write>(&self, writer: &mut W) -> std::fmt::Result;
+    fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
 }
 
 impl AttributeName for &str {
-    fn render<W: Write>(&self, writer: &mut W) -> std::fmt::Result {
-        writer.write_str(self)
+    fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self)
     }
 }
 
@@ -45,24 +48,27 @@ impl AttributeName for &str {
 /// This value should be escaped for double quotes for example.
 /// The implementation of this trait on `&str` already implements this.
 pub trait AttributeValue {
-    fn render<W: Write>(&self, f: &mut W) -> std::fmt::Result;
+    fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
 }
 
 impl AttributeValue for &str {
-    fn render<W: Write>(&self, f: &mut W) -> std::fmt::Result {
-        escape(f, self)
+    fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        EscapedValue(self).fmt(f)
     }
 }
 
 #[inline]
-fn render_attr_name_only<W: Write, N: AttributeName>(f: &mut W, name: &N) -> std::fmt::Result {
+fn render_attr_name_only<N: AttributeName>(
+    f: &mut std::fmt::Formatter<'_>,
+    name: &N,
+) -> std::fmt::Result {
     f.write_char(' ')?;
     name.render(f)
 }
 
 #[inline]
-fn render_attr<W: Write, N: AttributeName, V: AttributeValue>(
-    f: &mut W,
+fn render_attr<N: AttributeName, V: AttributeValue>(
+    f: &mut std::fmt::Formatter<'_>,
     name: &N,
     value: &V,
 ) -> std::fmt::Result {
@@ -100,18 +106,18 @@ fn render_attr<W: Write, N: AttributeName, V: AttributeValue>(
 /// It's possible to implement attributes with custom types, just by implementing the [AttributeName] and [AttributeValue] traits.
 ///
 /// ```rust
-/// use std::fmt::Write;
+/// use std::fmt::{Display, Write};
 ///
 /// struct ClassNames<'a>(&'a [&'static str]);
 ///
 /// impl<'a> another_html_builder::attribute::AttributeValue for ClassNames<'a> {
-///     fn render<W: Write>(&self, f: &mut W) -> std::fmt::Result {
+///     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 ///         for (index, inner) in self.0.iter().enumerate() {
 ///             if (index > 0) {
 ///                 f.write_char(' ')?;
 ///             }
 ///             // this could be avoided if you consider it is escaped by default
-///             another_html_builder::attribute::escape(f, inner)?;
+///             another_html_builder::attribute::EscapedValue(inner).fmt(f)?;
 ///         }
 ///         Ok(())
 ///     }
