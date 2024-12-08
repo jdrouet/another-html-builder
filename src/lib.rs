@@ -15,7 +15,7 @@
 //! }
 //!
 //! impl AttributeValue for Lang {
-//!     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//!     fn render<W: std::fmt::Write>(&self, f: &mut W) -> std::fmt::Result {
 //!         f.write_str(match self {
 //!             Self::En => "en",
 //!             Self::Fr => "fr",
@@ -126,7 +126,7 @@ pub fn write_escaped_content_str<W: Write>(f: &mut W, value: &str) -> std::fmt::
 macro_rules! attribute_value {
     ($type:ty) => {
         impl AttributeValue for $type {
-            fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            fn render<W: std::fmt::Write>(&self, f: &mut W) -> std::fmt::Result {
                 write!(f, "{self}")
             }
         }
@@ -135,12 +135,12 @@ macro_rules! attribute_value {
 
 /// Represents an element attribute name.
 pub trait AttributeName {
-    fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+    fn render<W: Write>(&self, writer: &mut W) -> std::fmt::Result;
 }
 
 impl AttributeName for &str {
-    fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self)
+    fn render<W: Write>(&self, writer: &mut W) -> std::fmt::Result {
+        writer.write_str(self)
     }
 }
 
@@ -149,27 +149,24 @@ impl AttributeName for &str {
 /// This value should be escaped for double quotes for example.
 /// The implementation of this trait on `&str` already implements this.
 pub trait AttributeValue {
-    fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+    fn render<W: Write>(&self, f: &mut W) -> std::fmt::Result;
 }
 
 impl AttributeValue for &str {
-    fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn render<W: Write>(&self, f: &mut W) -> std::fmt::Result {
         escape_attr(f, self)
     }
 }
 
 #[inline]
-fn render_attr_name_only<N: AttributeName>(
-    f: &mut std::fmt::Formatter<'_>,
-    name: &N,
-) -> std::fmt::Result {
+fn render_attr_name_only<W: Write, N: AttributeName>(f: &mut W, name: &N) -> std::fmt::Result {
     f.write_char(' ')?;
     name.render(f)
 }
 
 #[inline]
-fn render_attr<N: AttributeName, V: AttributeValue>(
-    f: &mut std::fmt::Formatter<'_>,
+fn render_attr<W: Write, N: AttributeName, V: AttributeValue>(
+    f: &mut W,
     name: &N,
     value: &V,
 ) -> std::fmt::Result {
@@ -212,7 +209,7 @@ fn render_attr<N: AttributeName, V: AttributeValue>(
 /// struct ClassNames<'a>(&'a [&'static str]);
 ///
 /// impl<'a> another_html_builder::AttributeValue for ClassNames<'a> {
-///     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+///     fn render<W: Write>(&self, f: &mut W) -> std::fmt::Result {
 ///         for (index, inner) in self.0.iter().enumerate() {
 ///             if (index > 0) {
 ///                 f.write_char(' ')?;
@@ -326,14 +323,14 @@ pub struct Buffer<W, C> {
 
 impl Default for Buffer<String, Body<'static>> {
     fn default() -> Self {
-        Self::new()
+        Self::new(String::new())
     }
 }
 
 impl Buffer<String, Body<'static>> {
-    pub fn new() -> Self {
+    pub fn new(buffer: String) -> Self {
         Self {
-            inner: String::default(),
+            inner: buffer,
             current: Body::Root,
         }
     }
@@ -500,7 +497,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
     /// Appends some text and escape it.
     ///
     /// ```rust
-    /// let html = another_html_builder::Buffer::new()
+    /// let html = another_html_builder::Buffer::default()
     ///     .node("p")
     ///     .content(|b| b.text("asd\"weiofew!/<>"))
     ///     .into_inner();
@@ -523,7 +520,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
     /// For more information about how to extend attributes, take a look at the [Attribute] trait.
     ///
     /// ```rust
-    /// let html = another_html_builder::Buffer::new()
+    /// let html = another_html_builder::Buffer::default()
     ///     .node("p")
     ///     .attr("single")
     ///     .attr(("hello", "world"))
@@ -559,7 +556,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
     /// Conditionally appends some attributes
     ///
     /// ```rust
-    /// let html = another_html_builder::Buffer::new()
+    /// let html = another_html_builder::Buffer::default()
     ///     .node("p")
     ///     .cond_attr(true, ("foo", "bar"))
     ///     .cond_attr(false, ("foo", "baz"))
@@ -596,7 +593,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
     /// Closes the current node without providing any content
     ///
     /// ```rust
-    /// let html = another_html_builder::Buffer::new()
+    /// let html = another_html_builder::Buffer::default()
     ///     .node("p")
     ///     .close()
     ///     .into_inner();
@@ -623,7 +620,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
     /// When returning the inner callback, the closing element will be written to the buffer
     ///
     /// ```rust
-    /// let html = another_html_builder::Buffer::new()
+    /// let html = another_html_builder::Buffer::default()
     ///     .node("div")
     ///     .content(|buf| buf.node("p").close())
     ///     .into_inner();
@@ -728,13 +725,13 @@ mod tests {
 
     #[test]
     fn should_return_inner_value() {
-        let buf = Buffer::new().node("a").content(|buf| buf);
+        let buf = Buffer::default().node("a").content(|buf| buf);
         assert_eq!(buf.inner(), "<a></a>");
     }
 
     #[test]
     fn should_give_node_path() {
-        let buf = Buffer::new();
+        let buf = Buffer::default();
         assert_eq!(buf.current.path(), "$");
         let _buf = buf.node("a").content(|buf| {
             assert_eq!(buf.current.path(), "$ > a");
@@ -744,7 +741,7 @@ mod tests {
 
     #[test]
     fn should_rollback_after_content() {
-        let buffer = Buffer::new().node("a").content(|buf| buf);
+        let buffer = Buffer::default().node("a").content(|buf| buf);
         assert!(
             matches!(buffer.current, Body::Root),
             "found {:?}",
@@ -754,7 +751,7 @@ mod tests {
 
     #[test]
     fn simple_html() {
-        let html = Buffer::new()
+        let html = Buffer::default()
             .doctype()
             .node("html")
             .attr(("lang", "en"))
@@ -779,7 +776,7 @@ mod tests {
 
     #[test]
     fn with_special_characters_in_attributes() {
-        let html = Buffer::new()
+        let html = Buffer::default()
             .node("a")
             .attr(("title", "Let's add a quote \" like this"))
             .attr(("href", "http://example.com?whatever=here"))
@@ -793,7 +790,7 @@ mod tests {
 
     #[test]
     fn with_special_characters_in_content() {
-        let html = Buffer::new()
+        let html = Buffer::default()
             .node("p")
             .content(|b| b.text("asd\"weiofew!/<>"))
             .into_inner();
@@ -802,7 +799,7 @@ mod tests {
 
     #[test]
     fn with_optional_attributes() {
-        let html = Buffer::new()
+        let html = Buffer::default()
             .node("p")
             .attr(Some(("foo", "bar")))
             .attr(None::<(&str, &str)>)
@@ -815,7 +812,7 @@ mod tests {
 
     #[test]
     fn with_attributes() {
-        let html = Buffer::new()
+        let html = Buffer::default()
             .node("p")
             .attr(("foo", "bar"))
             .attr(("bool", true))
@@ -828,7 +825,7 @@ mod tests {
 
     #[test]
     fn with_conditional_attributes() {
-        let html = Buffer::new()
+        let html = Buffer::default()
             .node("p")
             .cond_attr(true, ("foo", "bar"))
             .cond_attr(false, ("foo", "baz"))
@@ -843,7 +840,7 @@ mod tests {
     fn with_conditional_content() {
         let notification = false;
         let connected = true;
-        let html = Buffer::new()
+        let html = Buffer::default()
             .node("div")
             .content(|buf| {
                 buf.cond(notification, |buf| {
@@ -859,7 +856,7 @@ mod tests {
     #[test]
     fn with_optional_content() {
         let error = Some("This is an error");
-        let html = Buffer::new()
+        let html = Buffer::default()
             .node("div")
             .content(|buf| buf.optional(error, |buf, msg| buf.text(msg)))
             .into_inner();
