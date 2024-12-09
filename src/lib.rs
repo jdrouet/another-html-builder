@@ -7,7 +7,9 @@
 //! In this example, we create a custom attribute and also a custom `Head` element.
 //!
 //! ```rust
-//! use another_html_builder::{AttributeValue, Body, Buffer};
+//! use another_html_builder::attribute::AttributeValue;
+//! use another_html_builder::prelude::WriterExt;
+//! use another_html_builder::{Body, Buffer};
 //!
 //! enum Lang {
 //!     En,
@@ -36,7 +38,7 @@
 //! }
 //!
 //! impl Head {
-//!     fn render<'a, W: std::fmt::Write>(&self, buf: Buffer<W, Body<'a>>) -> Buffer<W, Body<'a>> {
+//!     fn render<'a, W: WriterExt>(&self, buf: Buffer<W, Body<'a>>) -> Buffer<W, Body<'a>> {
 //!         buf.node("head")
 //!             .content(|buf| buf.node("title").content(|buf| buf.text(self.title)))
 //!     }
@@ -56,227 +58,25 @@
 //! ```
 use std::fmt::Write;
 
-/// Helper to write `&str` attributes to a [Write] and automatically escape
-pub fn escape_attr<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
-    if value.is_empty() {
-        return Ok(());
-    }
-    let mut start: usize = 0;
-    while let Some(index) = value[start..].find('"') {
-        if index > 0 {
-            f.write_str(&value[start..(start + index)])?;
-        }
-        f.write_str("\\\"")?;
-        let end = start + index + 1;
-        debug_assert!(start < end && end <= value.len());
-        start = end;
-    }
-    f.write_str(&value[start..])?;
-    Ok(())
-}
+pub mod attribute;
+pub mod content;
+pub mod prelude;
+
+use crate::prelude::{FmtWriter, IoWriter, WriterExt};
 
 /// Helper to write `&str` attributes to a [Write] and automatically escape
-#[deprecated(note = "this function has been renamed, use `escape_attr` instead")]
+#[deprecated(note = "this function has been renamed, use `attribute::escape` instead")]
 #[inline(always)]
 pub fn write_escaped_attribute_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
-    escape_attr(f, value)
-}
-
-const CONTENT_ESCAPE: [char; 6] = ['&', '<', '>', '"', '\'', '/'];
-
-/// Helper to write `&str` content to a [Write] and automatically escape
-pub fn escape_content<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
-    if value.is_empty() {
-        return Ok(());
-    }
-    let mut start: usize = 0;
-    while let Some(index) = value[start..].find(CONTENT_ESCAPE) {
-        if index > 0 {
-            f.write_str(&value[start..(start + index)])?;
-        }
-        let begin = start + index;
-        debug_assert!(start <= begin);
-        let end = begin + 1;
-        debug_assert!(begin < value.len());
-        debug_assert!(begin < end);
-        debug_assert!(end <= value.len());
-        match &value[begin..end] {
-            "&" => f.write_str("&amp;")?,
-            "<" => f.write_str("&lt;")?,
-            ">" => f.write_str("&gt;")?,
-            "\"" => f.write_str("&quot;")?,
-            "'" => f.write_str("&#x27;")?,
-            "/" => f.write_str("&#x2F;")?,
-            other => f.write_str(other)?,
-        };
-        start = end;
-        debug_assert!(start <= value.len());
-    }
-    f.write_str(&value[start..])?;
-    Ok(())
+    write!(f, "{}", attribute::EscapedValue(value))
 }
 
 /// Helper to write `&str` content to a [Write] and automatically escape
 #[deprecated(note = "this function has been renamed, use `escape_content` instead")]
 #[inline(always)]
 pub fn write_escaped_content_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
-    escape_content(f, value)
+    write!(f, "{}", content::EscapedContent(value))
 }
-
-macro_rules! attribute_value {
-    ($type:ty) => {
-        impl AttributeValue for $type {
-            fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{self}")
-            }
-        }
-    };
-}
-
-/// Represents an element attribute name.
-pub trait AttributeName {
-    fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
-}
-
-impl AttributeName for &str {
-    fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self)
-    }
-}
-
-/// Represents an element attribute value.
-///
-/// This value should be escaped for double quotes for example.
-/// The implementation of this trait on `&str` already implements this.
-pub trait AttributeValue {
-    fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
-}
-
-impl AttributeValue for &str {
-    fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        escape_attr(f, self)
-    }
-}
-
-#[inline]
-fn render_attr_name_only<N: AttributeName>(
-    f: &mut std::fmt::Formatter<'_>,
-    name: &N,
-) -> std::fmt::Result {
-    f.write_char(' ')?;
-    name.render(f)
-}
-
-#[inline]
-fn render_attr<N: AttributeName, V: AttributeValue>(
-    f: &mut std::fmt::Formatter<'_>,
-    name: &N,
-    value: &V,
-) -> std::fmt::Result {
-    render_attr_name_only(f, name)?;
-    f.write_char('=')?;
-    f.write_char('"')?;
-    value.render(f)?;
-    f.write_char('"')
-}
-
-/// Wrapper used for displaying attributes in elements
-///
-/// This wrapper can print attributes with or without values.
-/// It can also handle attributes wrapped in an `Option` and will behave accordingly.
-///
-/// # Examples
-///
-/// ```rust
-/// let html = another_html_builder::Buffer::default()
-///     .node("div")
-///     .attr("name-only")
-///     .attr(("name", "value"))
-///     .attr(Some(("other", "value")))
-///     .attr(("with-number", 42))
-///     .close()
-///     .into_inner();
-/// assert_eq!(
-///     html,
-///     "<div name-only name=\"value\" other=\"value\" with-number=\"42\" />"
-/// );
-/// ```
-///
-/// # Extending
-///
-/// It's possible to implement attributes with custom types, just by implementing the [AttributeName] and [AttributeValue] traits.
-///
-/// ```rust
-/// use std::fmt::Write;
-///
-/// struct ClassNames<'a>(&'a [&'static str]);
-///
-/// impl<'a> another_html_builder::AttributeValue for ClassNames<'a> {
-///     fn render(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-///         for (index, inner) in self.0.iter().enumerate() {
-///             if (index > 0) {
-///                 f.write_char(' ')?;
-///             }
-///             // this could be avoided if you consider it is escaped by default
-///             another_html_builder::escape_attr(f, inner)?;
-///         }
-///         Ok(())
-///     }
-/// }
-///
-/// let html = another_html_builder::Buffer::default()
-///     .node("div")
-///     .attr(("class", ClassNames(&["foo", "bar"])))
-///     .close()
-///     .into_inner();
-/// assert_eq!(html, "<div class=\"foo bar\" />");
-/// ```
-pub struct Attribute<T>(pub T);
-
-impl<N: AttributeName> std::fmt::Display for Attribute<Option<N>> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(ref inner) = self.0 {
-            render_attr_name_only(f, inner)
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl<N: AttributeName> std::fmt::Display for Attribute<N> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        render_attr_name_only(f, &self.0)
-    }
-}
-
-impl<N: AttributeName, V: AttributeValue> std::fmt::Display for Attribute<Option<(N, V)>> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some((name, value)) = &self.0 {
-            render_attr(f, name, value)
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl<N: AttributeName, V: AttributeValue> std::fmt::Display for Attribute<(N, V)> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (name, value) = &self.0;
-        render_attr(f, name, value)
-    }
-}
-
-attribute_value!(bool);
-attribute_value!(u8);
-attribute_value!(u16);
-attribute_value!(u32);
-attribute_value!(u64);
-attribute_value!(usize);
-attribute_value!(i8);
-attribute_value!(i16);
-attribute_value!(i32);
-attribute_value!(i64);
-attribute_value!(isize);
 
 /// Representation of the inside of an element or the root level.
 ///
@@ -324,34 +124,49 @@ pub struct Buffer<W, C> {
     current: C,
 }
 
-impl Default for Buffer<String, Body<'static>> {
+impl Default for Buffer<FmtWriter<String>, Body<'static>> {
     fn default() -> Self {
-        Self::new()
+        Self::from(String::new())
     }
 }
 
-impl Buffer<String, Body<'static>> {
-    pub fn new() -> Self {
+impl<W: std::fmt::Write> From<W> for Buffer<FmtWriter<W>, Body<'static>> {
+    fn from(buffer: W) -> Self {
         Self {
-            inner: String::default(),
+            inner: FmtWriter(buffer),
             current: Body::Root,
         }
     }
 }
 
-impl<W> Buffer<W, Body<'_>> {
+impl<W: std::io::Write> From<W> for Buffer<IoWriter<W>, Body<'static>> {
+    fn from(value: W) -> Self {
+        Self {
+            inner: IoWriter(value),
+            current: Body::Root,
+        }
+    }
+}
+
+impl<W> Buffer<FmtWriter<W>, Body<'_>> {
     pub fn into_inner(self) -> W {
-        self.inner
+        self.inner.0
     }
 }
 
-impl Buffer<String, Body<'_>> {
+impl<W> Buffer<IoWriter<W>, Body<'_>> {
+    pub fn into_inner(self) -> W {
+        self.inner.0
+    }
+}
+
+impl Buffer<FmtWriter<String>, Body<'_>> {
     pub fn inner(&self) -> &str {
-        self.inner.as_str()
+        self.inner.0.as_str()
     }
 }
 
-impl<W: std::fmt::Write> Buffer<W, Body<'_>> {
+impl<W: WriterExt> Buffer<W, Body<'_>> {
     /// Appends the html doctype to the buffer
     pub fn doctype(mut self) -> Self {
         self.inner.write_str("<!DOCTYPE html>").unwrap();
@@ -359,13 +174,13 @@ impl<W: std::fmt::Write> Buffer<W, Body<'_>> {
     }
 
     /// Tries to append the html doctype to the buffer
-    pub fn try_doctype(mut self) -> Result<Self, std::fmt::Error> {
+    pub fn try_doctype(mut self) -> Result<Self, W::Error> {
         self.inner.write_str("<!DOCTYPE html>")?;
         Ok(self)
     }
 }
 
-impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
+impl<'a, W: WriterExt> Buffer<W, Body<'a>> {
     /// Conditionally apply some children to an element
     ///
     /// ```rust
@@ -388,13 +203,9 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
         }
     }
 
-    pub fn try_cond<F>(
-        self,
-        condition: bool,
-        children: F,
-    ) -> Result<Buffer<W, Body<'a>>, std::fmt::Error>
+    pub fn try_cond<F>(self, condition: bool, children: F) -> Result<Buffer<W, Body<'a>>, W::Error>
     where
-        F: FnOnce(Buffer<W, Body>) -> Result<Buffer<W, Body>, std::fmt::Error>,
+        F: FnOnce(Buffer<W, Body>) -> Result<Buffer<W, Body>, W::Error>,
     {
         if condition {
             children(self)
@@ -430,9 +241,9 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
         self,
         value: Option<V>,
         children: F,
-    ) -> Result<Buffer<W, Body<'a>>, std::fmt::Error>
+    ) -> Result<Buffer<W, Body<'a>>, W::Error>
     where
-        F: FnOnce(Buffer<W, Body>, V) -> Result<Buffer<W, Body>, std::fmt::Error>,
+        F: FnOnce(Buffer<W, Body>, V) -> Result<Buffer<W, Body>, W::Error>,
     {
         if let Some(inner) = value {
             children(self, inner)
@@ -463,7 +274,8 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
     /// assert_eq!(html, "<p>hello</p>");
     /// ```
     pub fn node(mut self, tag: &'a str) -> Buffer<W, Element<'a>> {
-        write!(&mut self.inner, "<{tag}").unwrap();
+        self.inner.write_char('<').unwrap();
+        self.inner.write_str(tag).unwrap();
         Buffer {
             inner: self.inner,
             current: Element {
@@ -473,8 +285,9 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
         }
     }
 
-    pub fn try_node(mut self, tag: &'a str) -> Result<Buffer<W, Element<'a>>, std::fmt::Error> {
-        write!(&mut self.inner, "<{tag}")?;
+    pub fn try_node(mut self, tag: &'a str) -> Result<Buffer<W, Element<'a>>, W::Error> {
+        self.inner.write_char('<')?;
+        self.inner.write_str(tag)?;
         Ok(Buffer {
             inner: self.inner,
             current: Element {
@@ -488,42 +301,42 @@ impl<'a, W: std::fmt::Write> Buffer<W, Body<'a>> {
     ///
     /// This will not escape the provided value.
     pub fn raw<V: std::fmt::Display>(mut self, value: V) -> Self {
-        write!(&mut self.inner, "{value}").unwrap();
+        self.inner.write(value).unwrap();
         self
     }
 
-    pub fn try_raw<V: std::fmt::Display>(mut self, value: V) -> Result<Self, std::fmt::Error> {
-        write!(&mut self.inner, "{value}")?;
+    pub fn try_raw<V: std::fmt::Display>(mut self, value: V) -> Result<Self, W::Error> {
+        self.inner.write(value)?;
         Ok(self)
     }
 
     /// Appends some text and escape it.
     ///
     /// ```rust
-    /// let html = another_html_builder::Buffer::new()
+    /// let html = another_html_builder::Buffer::default()
     ///     .node("p")
     ///     .content(|b| b.text("asd\"weiofew!/<>"))
     ///     .into_inner();
     /// assert_eq!(html, "<p>asd&quot;weiofew!&#x2F;&lt;&gt;</p>");
     /// ```
-    pub fn text(mut self, content: &str) -> Self {
-        escape_content(&mut self.inner, content).unwrap();
+    pub fn text(mut self, input: &str) -> Self {
+        self.inner.write(content::EscapedContent(input)).unwrap();
         self
     }
 
-    pub fn try_text(mut self, content: &str) -> Result<Self, std::fmt::Error> {
-        escape_content(&mut self.inner, content)?;
+    pub fn try_text(mut self, input: &str) -> Result<Self, W::Error> {
+        self.inner.write(content::EscapedContent(input))?;
         Ok(self)
     }
 }
 
-impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
+impl<'a, W: WriterExt> Buffer<W, Element<'a>> {
     /// Appends an attribute to the current node.
     ///
-    /// For more information about how to extend attributes, take a look at the [Attribute] trait.
+    /// For more information about how to extend attributes, take a look at the [crate::attribute::Attribute] trait.
     ///
     /// ```rust
-    /// let html = another_html_builder::Buffer::new()
+    /// let html = another_html_builder::Buffer::default()
     ///     .node("p")
     ///     .attr("single")
     ///     .attr(("hello", "world"))
@@ -541,25 +354,25 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
     /// ```
     pub fn attr<T>(mut self, attr: T) -> Self
     where
-        Attribute<T>: std::fmt::Display,
+        attribute::Attribute<T>: std::fmt::Display,
     {
-        write!(&mut self.inner, "{}", Attribute(attr)).unwrap();
+        self.inner.write(attribute::Attribute(attr)).unwrap();
         self
     }
 
     #[inline]
-    pub fn try_attr<T>(mut self, attr: T) -> Result<Self, std::fmt::Error>
+    pub fn try_attr<T>(mut self, attr: T) -> Result<Self, W::Error>
     where
-        Attribute<T>: std::fmt::Display,
+        attribute::Attribute<T>: std::fmt::Display,
     {
-        write!(&mut self.inner, "{}", Attribute(attr))?;
+        self.inner.write(attribute::Attribute(attr))?;
         Ok(self)
     }
 
     /// Conditionally appends some attributes
     ///
     /// ```rust
-    /// let html = another_html_builder::Buffer::new()
+    /// let html = another_html_builder::Buffer::default()
     ///     .node("p")
     ///     .cond_attr(true, ("foo", "bar"))
     ///     .cond_attr(false, ("foo", "baz"))
@@ -572,7 +385,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
     #[inline]
     pub fn cond_attr<T>(self, condition: bool, attr: T) -> Self
     where
-        Attribute<T>: std::fmt::Display,
+        attribute::Attribute<T>: std::fmt::Display,
     {
         if condition {
             self.attr(attr)
@@ -582,9 +395,9 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
     }
 
     #[inline]
-    pub fn try_cond_attr<T>(self, condition: bool, attr: T) -> Result<Self, std::fmt::Error>
+    pub fn try_cond_attr<T>(self, condition: bool, attr: T) -> Result<Self, W::Error>
     where
-        Attribute<T>: std::fmt::Display,
+        attribute::Attribute<T>: std::fmt::Display,
     {
         if condition {
             self.try_attr(attr)
@@ -596,7 +409,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
     /// Closes the current node without providing any content
     ///
     /// ```rust
-    /// let html = another_html_builder::Buffer::new()
+    /// let html = another_html_builder::Buffer::default()
     ///     .node("p")
     ///     .close()
     ///     .into_inner();
@@ -610,7 +423,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
         }
     }
 
-    pub fn try_close(mut self) -> Result<Buffer<W, Body<'a>>, std::fmt::Error> {
+    pub fn try_close(mut self) -> Result<Buffer<W, Body<'a>>, W::Error> {
         self.inner.write_str(" />")?;
         Ok(Buffer {
             inner: self.inner,
@@ -623,7 +436,7 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
     /// When returning the inner callback, the closing element will be written to the buffer
     ///
     /// ```rust
-    /// let html = another_html_builder::Buffer::new()
+    /// let html = another_html_builder::Buffer::default()
     ///     .node("div")
     ///     .content(|buf| buf.node("p").close())
     ///     .into_inner();
@@ -660,9 +473,9 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
         }
     }
 
-    pub fn try_content<F>(mut self, children: F) -> Result<Buffer<W, Body<'a>>, std::fmt::Error>
+    pub fn try_content<F>(mut self, children: F) -> Result<Buffer<W, Body<'a>>, W::Error>
     where
-        F: FnOnce(Buffer<W, Body>) -> Result<Buffer<W, Body>, std::fmt::Error>,
+        F: FnOnce(Buffer<W, Body>) -> Result<Buffer<W, Body>, W::Error>,
     {
         self.inner.write_char('>')?;
         let child_buffer = Buffer {
@@ -694,6 +507,8 @@ impl<'a, W: std::fmt::Write> Buffer<W, Element<'a>> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Cursor, Write};
+
     use super::*;
 
     #[test_case::test_case("hello world", "hello world"; "without character to escape")]
@@ -701,9 +516,10 @@ mod tests {
     #[test_case::test_case("\"a", "\\\"a"; "with special at the beginning")]
     #[test_case::test_case("a\"", "a\\\""; "with special at the end")]
     fn escaping_attribute(input: &str, expected: &str) {
-        let mut buf = String::new();
-        super::escape_attr(&mut buf, input).unwrap();
-        assert_eq!(buf, expected);
+        assert_eq!(
+            format!("{}", crate::attribute::EscapedValue(input)),
+            expected
+        );
 
         let mut buf = String::new();
         #[allow(deprecated, reason = "for testing purpose")]
@@ -716,9 +532,10 @@ mod tests {
     #[test_case::test_case("\"a", "&quot;a"; "with special at the beginning")]
     #[test_case::test_case("a\"", "a&quot;"; "with special at the end")]
     fn escaping_content(input: &str, expected: &str) {
-        let mut buf = String::new();
-        super::escape_content(&mut buf, input).unwrap();
-        assert_eq!(buf, expected);
+        assert_eq!(
+            format!("{}", crate::content::EscapedContent(input)),
+            expected
+        );
 
         let mut buf = String::new();
         #[allow(deprecated, reason = "for testing purpose")]
@@ -728,13 +545,13 @@ mod tests {
 
     #[test]
     fn should_return_inner_value() {
-        let buf = Buffer::new().node("a").content(|buf| buf);
+        let buf = Buffer::default().node("a").content(|buf| buf);
         assert_eq!(buf.inner(), "<a></a>");
     }
 
     #[test]
     fn should_give_node_path() {
-        let buf = Buffer::new();
+        let buf = Buffer::default();
         assert_eq!(buf.current.path(), "$");
         let _buf = buf.node("a").content(|buf| {
             assert_eq!(buf.current.path(), "$ > a");
@@ -744,7 +561,7 @@ mod tests {
 
     #[test]
     fn should_rollback_after_content() {
-        let buffer = Buffer::new().node("a").content(|buf| buf);
+        let buffer = Buffer::default().node("a").content(|buf| buf);
         assert!(
             matches!(buffer.current, Body::Root),
             "found {:?}",
@@ -754,7 +571,7 @@ mod tests {
 
     #[test]
     fn simple_html() {
-        let html = Buffer::new()
+        let html = Buffer::default()
             .doctype()
             .node("html")
             .attr(("lang", "en"))
@@ -779,7 +596,7 @@ mod tests {
 
     #[test]
     fn with_special_characters_in_attributes() {
-        let html = Buffer::new()
+        let html = Buffer::default()
             .node("a")
             .attr(("title", "Let's add a quote \" like this"))
             .attr(("href", "http://example.com?whatever=here"))
@@ -793,7 +610,7 @@ mod tests {
 
     #[test]
     fn with_special_characters_in_content() {
-        let html = Buffer::new()
+        let html = Buffer::default()
             .node("p")
             .content(|b| b.text("asd\"weiofew!/<>"))
             .into_inner();
@@ -802,7 +619,7 @@ mod tests {
 
     #[test]
     fn with_optional_attributes() {
-        let html = Buffer::new()
+        let html = Buffer::default()
             .node("p")
             .attr(Some(("foo", "bar")))
             .attr(None::<(&str, &str)>)
@@ -815,7 +632,7 @@ mod tests {
 
     #[test]
     fn with_attributes() {
-        let html = Buffer::new()
+        let html = Buffer::default()
             .node("p")
             .attr(("foo", "bar"))
             .attr(("bool", true))
@@ -828,7 +645,7 @@ mod tests {
 
     #[test]
     fn with_conditional_attributes() {
-        let html = Buffer::new()
+        let html = Buffer::default()
             .node("p")
             .cond_attr(true, ("foo", "bar"))
             .cond_attr(false, ("foo", "baz"))
@@ -843,7 +660,7 @@ mod tests {
     fn with_conditional_content() {
         let notification = false;
         let connected = true;
-        let html = Buffer::new()
+        let html = Buffer::default()
             .node("div")
             .content(|buf| {
                 buf.cond(notification, |buf| {
@@ -859,10 +676,20 @@ mod tests {
     #[test]
     fn with_optional_content() {
         let error = Some("This is an error");
-        let html = Buffer::new()
+        let html = Buffer::default()
             .node("div")
             .content(|buf| buf.optional(error, |buf, msg| buf.text(msg)))
             .into_inner();
         assert_eq!(html, "<div>This is an error</div>");
+    }
+
+    #[test]
+    fn should_write_to_io_buffer() {
+        let buf = Buffer::from(Cursor::new(Vec::new()));
+        let buf = buf.node("div").content(|buf| buf.text("Hello World!"));
+        let mut writer = buf.into_inner();
+        writer.flush().unwrap();
+        let inner = writer.into_inner();
+        assert_eq!(&inner, "<div>Hello World!</div>".as_bytes());
     }
 }
