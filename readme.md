@@ -1,5 +1,12 @@
 # Another HTML builder
 
+[![Crates.io](https://img.shields.io/crates/d/another-html-builder)](https://crates.io/crates/another-html-builder)
+
+[![codecov](https://codecov.io/github/jdrouet/another-html-builder/graph/badge.svg?token=T1OLB5W14B)](https://codecov.io/github/jdrouet/another-html-builder)
+
+[![Average time to resolve an issue](http://isitmaintained.com/badge/resolution/jdrouet/another-html-builder.svg)](http://isitmaintained.com/project/jdrouet/another-html-builder "Average time to resolve an issue")
+[![Percentage of issues still open](http://isitmaintained.com/badge/open/jdrouet/another-html-builder.svg)](http://isitmaintained.com/project/jdrouet/another-html-builder "Percentage of issues still open")
+
 The goal of this builder is to be simple, to only rely on the standard library, to avoid copying values and write directly to a buffer.
 There is no lock involved, the ownership of the buffer is the only thing that will avoid race conditions.
 
