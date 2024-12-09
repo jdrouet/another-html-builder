@@ -1,5 +1,16 @@
+//! Attribute related module. This contains a wrapper to escape values.
+
 const CONTENT_ESCAPE: [char; 6] = ['&', '<', '>', '"', '\'', '/'];
 
+/// Wrapper around a [str] that will escape the content when writing.
+///
+/// This implementation will transform:
+/// - `&` to `&amp;`
+/// - `<` to `&lt;`
+/// - `>` to `&gt;`
+/// - `"` to `&quot;`
+/// - `'` to `&#x27;`
+/// - `/` to `&#x2F;`
 pub struct EscapedContent<'a>(pub &'a str);
 
 impl std::fmt::Display for EscapedContent<'_> {

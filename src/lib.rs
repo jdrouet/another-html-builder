@@ -333,7 +333,7 @@ impl<'a, W: WriterExt> Buffer<W, Body<'a>> {
 impl<'a, W: WriterExt> Buffer<W, Element<'a>> {
     /// Appends an attribute to the current node.
     ///
-    /// For more information about how to extend attributes, take a look at the [Attribute] trait.
+    /// For more information about how to extend attributes, take a look at the [crate::attribute::Attribute] trait.
     ///
     /// ```rust
     /// let html = another_html_builder::Buffer::default()

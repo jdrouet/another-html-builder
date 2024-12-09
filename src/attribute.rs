@@ -1,5 +1,9 @@
+//! Attribute related module. This contains the traits needed to implement a new
+//! kind of [AttributeValue] but also a wrapper to escape values.
+
 use std::fmt::{Display, Write};
 
+/// Wrapper around a [str] that will escape the content when writing.
 pub struct EscapedValue<'a>(pub &'a str);
 
 impl std::fmt::Display for EscapedValue<'_> {
