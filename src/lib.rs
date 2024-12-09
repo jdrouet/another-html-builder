@@ -126,14 +126,23 @@ pub struct Buffer<W, C> {
 
 impl Default for Buffer<FmtWriter<String>, Body<'static>> {
     fn default() -> Self {
-        Self::new(String::new())
+        Self::from(String::new())
     }
 }
 
-impl<W: std::fmt::Write> Buffer<FmtWriter<W>, Body<'static>> {
-    pub fn new(buffer: W) -> Self {
+impl<W: std::fmt::Write> From<W> for Buffer<FmtWriter<W>, Body<'static>> {
+    fn from(buffer: W) -> Self {
         Self {
             inner: FmtWriter(buffer),
+            current: Body::Root,
+        }
+    }
+}
+
+impl<W: std::io::Write> From<W> for Buffer<IoWriter<W>, Body<'static>> {
+    fn from(value: W) -> Self {
+        Self {
+            inner: IoWriter(value),
             current: Body::Root,
         }
     }
@@ -502,6 +511,8 @@ impl<'a, W: WriterExt> Buffer<W, Element<'a>> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Cursor, Write};
+
     use super::*;
 
     #[test_case::test_case("hello world", "hello world"; "without character to escape")]
@@ -674,5 +685,15 @@ mod tests {
             .content(|buf| buf.optional(error, |buf, msg| buf.text(msg)))
             .into_inner();
         assert_eq!(html, "<div>This is an error</div>");
+    }
+
+    #[test]
+    fn should_write_to_io_buffer() {
+        let buf = Buffer::from(Cursor::new(Vec::new()));
+        let buf = buf.node("div").content(|buf| buf.text("Hello World!"));
+        let mut writer = buf.into_inner();
+        writer.flush().unwrap();
+        let inner = writer.into_inner();
+        assert_eq!(&inner, "<div>Hello World!</div>".as_bytes());
     }
 }
