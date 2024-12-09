@@ -174,7 +174,7 @@ impl<W: WriterExt> Buffer<W, Body<'_>> {
     }
 
     /// Tries to append the html doctype to the buffer
-    pub fn try_doctype(mut self) -> Result<Self, std::io::Error> {
+    pub fn try_doctype(mut self) -> Result<Self, W::Error> {
         self.inner.write_str("<!DOCTYPE html>")?;
         Ok(self)
     }
@@ -203,13 +203,9 @@ impl<'a, W: WriterExt> Buffer<W, Body<'a>> {
         }
     }
 
-    pub fn try_cond<F>(
-        self,
-        condition: bool,
-        children: F,
-    ) -> Result<Buffer<W, Body<'a>>, std::fmt::Error>
+    pub fn try_cond<F>(self, condition: bool, children: F) -> Result<Buffer<W, Body<'a>>, W::Error>
     where
-        F: FnOnce(Buffer<W, Body>) -> Result<Buffer<W, Body>, std::fmt::Error>,
+        F: FnOnce(Buffer<W, Body>) -> Result<Buffer<W, Body>, W::Error>,
     {
         if condition {
             children(self)
@@ -245,9 +241,9 @@ impl<'a, W: WriterExt> Buffer<W, Body<'a>> {
         self,
         value: Option<V>,
         children: F,
-    ) -> Result<Buffer<W, Body<'a>>, std::fmt::Error>
+    ) -> Result<Buffer<W, Body<'a>>, W::Error>
     where
-        F: FnOnce(Buffer<W, Body>, V) -> Result<Buffer<W, Body>, std::fmt::Error>,
+        F: FnOnce(Buffer<W, Body>, V) -> Result<Buffer<W, Body>, W::Error>,
     {
         if let Some(inner) = value {
             children(self, inner)
@@ -289,7 +285,7 @@ impl<'a, W: WriterExt> Buffer<W, Body<'a>> {
         }
     }
 
-    pub fn try_node(mut self, tag: &'a str) -> Result<Buffer<W, Element<'a>>, std::io::Error> {
+    pub fn try_node(mut self, tag: &'a str) -> Result<Buffer<W, Element<'a>>, W::Error> {
         self.inner.write_char('<')?;
         self.inner.write_str(tag)?;
         Ok(Buffer {
@@ -309,7 +305,7 @@ impl<'a, W: WriterExt> Buffer<W, Body<'a>> {
         self
     }
 
-    pub fn try_raw<V: std::fmt::Display>(mut self, value: V) -> Result<Self, std::io::Error> {
+    pub fn try_raw<V: std::fmt::Display>(mut self, value: V) -> Result<Self, W::Error> {
         self.inner.write(value)?;
         Ok(self)
     }
@@ -328,7 +324,7 @@ impl<'a, W: WriterExt> Buffer<W, Body<'a>> {
         self
     }
 
-    pub fn try_text(mut self, input: &str) -> Result<Self, std::io::Error> {
+    pub fn try_text(mut self, input: &str) -> Result<Self, W::Error> {
         self.inner.write(content::EscapedContent(input))?;
         Ok(self)
     }
@@ -365,7 +361,7 @@ impl<'a, W: WriterExt> Buffer<W, Element<'a>> {
     }
 
     #[inline]
-    pub fn try_attr<T>(mut self, attr: T) -> Result<Self, std::io::Error>
+    pub fn try_attr<T>(mut self, attr: T) -> Result<Self, W::Error>
     where
         attribute::Attribute<T>: std::fmt::Display,
     {
@@ -399,7 +395,7 @@ impl<'a, W: WriterExt> Buffer<W, Element<'a>> {
     }
 
     #[inline]
-    pub fn try_cond_attr<T>(self, condition: bool, attr: T) -> Result<Self, std::io::Error>
+    pub fn try_cond_attr<T>(self, condition: bool, attr: T) -> Result<Self, W::Error>
     where
         attribute::Attribute<T>: std::fmt::Display,
     {
@@ -427,7 +423,7 @@ impl<'a, W: WriterExt> Buffer<W, Element<'a>> {
         }
     }
 
-    pub fn try_close(mut self) -> Result<Buffer<W, Body<'a>>, std::io::Error> {
+    pub fn try_close(mut self) -> Result<Buffer<W, Body<'a>>, W::Error> {
         self.inner.write_str(" />")?;
         Ok(Buffer {
             inner: self.inner,
@@ -477,9 +473,9 @@ impl<'a, W: WriterExt> Buffer<W, Element<'a>> {
         }
     }
 
-    pub fn try_content<F>(mut self, children: F) -> Result<Buffer<W, Body<'a>>, std::io::Error>
+    pub fn try_content<F>(mut self, children: F) -> Result<Buffer<W, Body<'a>>, W::Error>
     where
-        F: FnOnce(Buffer<W, Body>) -> Result<Buffer<W, Body>, std::io::Error>,
+        F: FnOnce(Buffer<W, Body>) -> Result<Buffer<W, Body>, W::Error>,
     {
         self.inner.write_char('>')?;
         let child_buffer = Buffer {
