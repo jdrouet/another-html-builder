@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/jdrouet/another-html-builder/compare/v0.1.3...v0.2.0) - 2024-12-09
+
+### Added
+
+- allow to use a `std::fmt::Write` and `std::io::Write` as buffer (#7)
+
+### Other
+
+- add badges to readme
+- update coverage configuration
+- remove deprecated functions
+- update readme
+
 ## [0.1.3](https://github.com/jdrouet/another-html-builder/compare/v0.1.2...v0.1.3) - 2024-11-30
 
 ### Fixed
