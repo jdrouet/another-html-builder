@@ -56,27 +56,11 @@
 //!     "<!DOCTYPE html><html lang=\"fr\"><head><title>Hello world!</title></head></html>"
 //! );
 //! ```
-use std::fmt::Write;
-
 pub mod attribute;
 pub mod content;
 pub mod prelude;
 
 use crate::prelude::{FmtWriter, IoWriter, WriterExt};
-
-/// Helper to write `&str` attributes to a [Write] and automatically escape
-#[deprecated(note = "this function has been renamed, use `attribute::escape` instead")]
-#[inline(always)]
-pub fn write_escaped_attribute_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
-    write!(f, "{}", attribute::EscapedValue(value))
-}
-
-/// Helper to write `&str` content to a [Write] and automatically escape
-#[deprecated(note = "this function has been renamed, use `escape_content` instead")]
-#[inline(always)]
-pub fn write_escaped_content_str<W: Write>(f: &mut W, value: &str) -> std::fmt::Result {
-    write!(f, "{}", content::EscapedContent(value))
-}
 
 /// Representation of the inside of an element or the root level.
 ///
@@ -510,38 +494,6 @@ mod tests {
     use std::io::{Cursor, Write};
 
     use super::*;
-
-    #[test_case::test_case("hello world", "hello world"; "without character to escape")]
-    #[test_case::test_case("a\"b", "a\\\"b"; "with special in the middle")]
-    #[test_case::test_case("\"a", "\\\"a"; "with special at the beginning")]
-    #[test_case::test_case("a\"", "a\\\""; "with special at the end")]
-    fn escaping_attribute(input: &str, expected: &str) {
-        assert_eq!(
-            format!("{}", crate::attribute::EscapedValue(input)),
-            expected
-        );
-
-        let mut buf = String::new();
-        #[allow(deprecated, reason = "for testing purpose")]
-        super::write_escaped_attribute_str(&mut buf, input).unwrap();
-        assert_eq!(buf, expected);
-    }
-
-    #[test_case::test_case("hello world", "hello world"; "without character to escape")]
-    #[test_case::test_case("a\"b", "a&quot;b"; "with special in the middle")]
-    #[test_case::test_case("\"a", "&quot;a"; "with special at the beginning")]
-    #[test_case::test_case("a\"", "a&quot;"; "with special at the end")]
-    fn escaping_content(input: &str, expected: &str) {
-        assert_eq!(
-            format!("{}", crate::content::EscapedContent(input)),
-            expected
-        );
-
-        let mut buf = String::new();
-        #[allow(deprecated, reason = "for testing purpose")]
-        super::write_escaped_content_str(&mut buf, input).unwrap();
-        assert_eq!(buf, expected);
-    }
 
     #[test]
     fn should_return_inner_value() {

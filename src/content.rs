@@ -45,3 +45,14 @@ impl std::fmt::Display for EscapedContent<'_> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test_case::test_case("hello world", "hello world"; "without character to escape")]
+    #[test_case::test_case("a\"b", "a&quot;b"; "with special in the middle")]
+    #[test_case::test_case("\"a", "&quot;a"; "with special at the beginning")]
+    #[test_case::test_case("a\"", "a&quot;"; "with special at the end")]
+    fn escaping_content(input: &str, expected: &str) {
+        assert_eq!(format!("{}", super::EscapedContent(input)), expected);
+    }
+}

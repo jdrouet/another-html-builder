@@ -180,3 +180,14 @@ attribute_value!(i16);
 attribute_value!(i32);
 attribute_value!(i64);
 attribute_value!(isize);
+
+#[cfg(test)]
+mod tests {
+    #[test_case::test_case("hello world", "hello world"; "without character to escape")]
+    #[test_case::test_case("a\"b", "a\\\"b"; "with special in the middle")]
+    #[test_case::test_case("\"a", "\\\"a"; "with special at the beginning")]
+    #[test_case::test_case("a\"", "a\\\""; "with special at the end")]
+    fn escaping_attribute(input: &str, expected: &str) {
+        assert_eq!(format!("{}", super::EscapedValue(input)), expected);
+    }
+}
